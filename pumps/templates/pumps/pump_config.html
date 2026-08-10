@@ -1,0 +1,41 @@
+{% extends "pumps/base.html" %}
+{% block title %}Pump Configuration - Coffee Machine{% endblock %}
+{% block content %}
+<h2>Pump Configuration</h2>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        {% for pump in pumps %}
+            <div class="pump-row">
+                <div>
+                    <label for="ingredient_{{ pump.id }}">Pump {{ pump.number }} <span class="muted">(GPIO {{ pump.gpio_pin }})</span></label>
+                    <input type="text" id="ingredient_{{ pump.id }}" name="ingredient_{{ pump.id }}" value="{{ pump.ingredient_name }}" placeholder="e.g. Coffee, Milk, Vanilla Syrup">
+                </div>
+                <div>
+                    <label for="rate_{{ pump.id }}">Flow rate (mL/sec)</label>
+                    <input type="number" step="0.01" min="0.01" id="rate_{{ pump.id }}" name="rate_{{ pump.id }}" value="{{ pump.ml_per_second|floatformat:2 }}">
+                </div>
+            </div>
+        {% endfor %}
+        <div class="row" style="margin-top:1.1rem;">
+            <button type="submit">Save Configuration</button>
+        </div>
+    </form>
+</div>
+
+<h3>Test Pumps</h3>
+{% for pump in pumps %}
+    <div class="card row between">
+        <div>
+            <strong>Pump {{ pump.number }}</strong>
+            <span class="muted">— {{ pump.ingredient_name|default:"unassigned" }} (GPIO {{ pump.gpio_pin }})</span>
+        </div>
+        <form method="post" action="{% url 'pumps:pump_test' pump.pk %}">
+            {% csrf_token %}
+            <input type="number" name="seconds" value="3" min="0.5" max="15" step="0.5" style="width:4.5rem;display:inline-block;">
+            <button type="submit">Run</button>
+        </form>
+    </div>
+{% endfor %}
+{% endblock %}

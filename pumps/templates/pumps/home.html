@@ -1,0 +1,45 @@
+{% extends "pumps/base.html" %}
+{% block title %}Recipes - Coffee Machine{% endblock %}
+{% block content %}
+<div class="row between" style="margin-bottom: 1.5rem;">
+    <h2 style="margin:0;">Recipes</h2>
+    <a class="btn" href="{% url 'pumps:recipe_create' %}">New Recipe</a>
+</div>
+
+{% if not recipes %}
+    <p class="empty">No recipes yet — create one to get started.</p>
+{% endif %}
+
+{% for recipe in recipes %}
+    <div class="card">
+        <div class="row between">
+            <div>
+                <strong>{{ recipe.name }}</strong>
+                {% if recipe.notes %}<div class="muted">{{ recipe.notes }}</div>{% endif %}
+            </div>
+        </div>
+        <ul class="ingredients">
+            {% regroup recipe.ingredients.all by step as step_list %}
+            {% for step in step_list %}
+                <li>
+                    {% if step_list|length > 1 %}Step {{ step.grouper }}: {% endif %}
+                    {% for ingredient in step.list %}{{ ingredient.amount_ml|floatformat:0 }}mL {{ ingredient.pump.ingredient_name|default:ingredient.pump }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                </li>
+            {% empty %}
+                <li>No ingredients configured.</li>
+            {% endfor %}
+        </ul>
+        <div class="row" style="margin-top: 0.75rem;">
+            <form class="inline" method="post" action="{% url 'pumps:recipe_brew' recipe.pk %}">
+                {% csrf_token %}
+                <button type="submit">Brew</button>
+            </form>
+            <a class="btn secondary" href="{% url 'pumps:recipe_edit' recipe.pk %}">Edit</a>
+            <form class="inline" method="post" action="{% url 'pumps:recipe_delete' recipe.pk %}" onsubmit="return confirm('Delete {{ recipe.name }}?');">
+                {% csrf_token %}
+                <button type="submit" class="danger">Delete</button>
+            </form>
+        </div>
+    </div>
+{% endfor %}
+{% endblock %}

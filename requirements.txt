@@ -1,0 +1,2 @@
+Django>=4.2,<5
+RPi.GPIO==0.7.1; platform_system=="Linux"

@@ -1,0 +1,38 @@
+{% extends "pumps/base.html" %}
+{% block title %}{% if recipe %}Edit Recipe{% else %}New Recipe{% endif %} - Coffee Machine{% endblock %}
+{% block content %}
+<h2>{% if recipe %}Edit "{{ recipe.name }}"{% else %}New Recipe{% endif %}</h2>
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ recipe.name|default:'' }}" required>
+
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes" rows="2">{{ recipe.notes|default:'' }}</textarea>
+
+        <h3>Ingredients</h3>
+        <p class="muted" style="margin-top:0;">
+            Amount in mL for each pump to use, and which step it runs in. Leave a pump blank to skip it.
+            Pumps that share a step number run at the same time; steps run one after another in order.
+        </p>
+        {% for pump, amount, step in pump_rows %}
+            <div class="pump-row">
+                <div>
+                    <label for="amount_{{ pump.id }}">{{ pump.ingredient_name|default:pump }} — mL <span class="muted">(GPIO {{ pump.gpio_pin }})</span></label>
+                    <input type="number" step="1" min="0" id="amount_{{ pump.id }}" name="amount_{{ pump.id }}" value="{{ amount }}">
+                </div>
+                <div>
+                    <label for="step_{{ pump.id }}">Step</label>
+                    <input type="number" step="1" min="1" id="step_{{ pump.id }}" name="step_{{ pump.id }}" value="{{ step }}">
+                </div>
+            </div>
+        {% endfor %}
+
+        <div class="row" style="margin-top:1.5rem;">
+            <button type="submit">Save Recipe</button>
+            <a class="btn secondary" href="{% url 'pumps:home' %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
