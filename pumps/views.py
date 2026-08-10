@@ -15,13 +15,16 @@ def home(request):
 def pump_config(request):
     pumps = Pump.objects.all()
     if request.method == "POST":
+        bad_rates = []
         for pump in pumps:
             pump.ingredient_name = request.POST.get(f"ingredient_{pump.id}", "").strip()
             try:
                 pump.ml_per_second = max(float(request.POST.get(f"rate_{pump.id}")), 0.01)
             except (TypeError, ValueError):
-                pass
+                bad_rates.append(str(pump))
             pump.save()
+        if bad_rates:
+            messages.error(request, f"Ignored invalid flow rate for: {', '.join(bad_rates)}.")
         messages.success(request, "Pump configuration saved.")
         return redirect("pumps:pump_config")
     return render(request, "pumps/pump_config.html", {"pumps": pumps})
@@ -35,8 +38,12 @@ def pump_test(request, pk):
         except ValueError:
             seconds = 3
         seconds = max(0.5, min(seconds, MAX_TEST_SECONDS))
-        run_pump(pump.gpio_pin, seconds)
-        messages.success(request, f"Ran {pump} for {seconds:g}s.")
+        try:
+            run_pump(pump.gpio_pin, seconds)
+        except Exception as exc:
+            messages.error(request, f"Couldn't run {pump}: {exc}")
+        else:
+            messages.success(request, f"Ran {pump} for {seconds:g}s.")
     return redirect("pumps:pump_config")
 
 
@@ -60,6 +67,7 @@ def recipe_form(request, pk=None):
             recipe.notes = notes
             recipe.save()
             recipe.ingredients.all().delete()
+            skipped = []
             for pump in pumps:
                 raw = request.POST.get(f"amount_{pump.id}", "").strip()
                 if not raw:
@@ -67,6 +75,7 @@ def recipe_form(request, pk=None):
                 try:
                     amount = float(raw)
                 except ValueError:
+                    skipped.append(str(pump))
                     continue
                 if amount <= 0:
                     continue
@@ -75,6 +84,8 @@ def recipe_form(request, pk=None):
                 except ValueError:
                     step = 1
                 RecipeIngredient.objects.create(recipe=recipe, pump=pump, amount_ml=amount, step=step)
+            if skipped:
+                messages.error(request, f"Ignored invalid amount for: {', '.join(skipped)}.")
             messages.success(request, f"Saved recipe '{recipe.name}'.")
             return redirect("pumps:home")
 
@@ -103,8 +114,15 @@ def recipe_brew(request, pk):
         steps = {}
         for ri in recipe.ingredients.select_related("pump"):
             steps.setdefault(ri.step, []).append((ri.pump.gpio_pin, ri.pump.seconds_for(ri.amount_ml)))
-        # steps run in order; pumps within a step run in parallel
-        for step_number in sorted(steps):
-            run_pumps_concurrently(steps[step_number])
-        messages.success(request, f"Brewed '{recipe.name}'.")
+        if not steps:
+            messages.error(request, f"'{recipe.name}' has no ingredients configured -- nothing to brew.")
+        else:
+            try:
+                # steps run in order; pumps within a step run in parallel
+                for step_number in sorted(steps):
+                    run_pumps_concurrently(steps[step_number])
+            except Exception as exc:
+                messages.error(request, f"Brewing '{recipe.name}' failed partway through: {exc}")
+            else:
+                messages.success(request, f"Brewed '{recipe.name}'.")
     return redirect("pumps:home")

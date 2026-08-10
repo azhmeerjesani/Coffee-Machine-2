@@ -43,9 +43,16 @@ def _get_gpio():
     with _setup_lock:
         if _gpio is None:
             if is_raspberry_pi():
-                import RPi.GPIO as GPIO
+                try:
+                    import RPi.GPIO as GPIO
 
-                GPIO.setmode(GPIO.BCM)
+                    GPIO.setmode(GPIO.BCM)
+                except Exception as exc:
+                    logger.exception("Failed to initialize RPi.GPIO")
+                    raise RuntimeError(
+                        f"Couldn't initialize RPi.GPIO ({exc}). Is it installed "
+                        "(pip install RPi.GPIO), and is this user in the gpio group?"
+                    ) from exc
                 _gpio = GPIO
             else:
                 _gpio = _SimulatedGPIO()
@@ -61,21 +68,37 @@ def _ensure_pin_ready(gpio, pin):
 def run_pump(pin, seconds):
     """Turn one pump on for `seconds`, then off. Blocks the calling thread."""
     gpio = _get_gpio()
-    _ensure_pin_ready(gpio, pin)
-    gpio.output(pin, gpio.LOW)
     try:
+        _ensure_pin_ready(gpio, pin)
+        gpio.output(pin, gpio.LOW)
         time.sleep(seconds)
+    except Exception:
+        logger.exception("Pump on pin %s failed while running", pin)
+        raise
     finally:
-        gpio.output(pin, gpio.HIGH)
+        try:
+            gpio.output(pin, gpio.HIGH)
+        except Exception:
+            logger.exception("Failed to turn OFF pump on pin %s -- check it manually", pin)
 
 
 def run_pumps_concurrently(pin_durations):
     """Run several pumps in parallel and block until all have finished.
 
-    pin_durations: iterable of (pin, seconds) pairs.
+    pin_durations: iterable of (pin, seconds) pairs. Raises RuntimeError
+    (after every pump has had a chance to finish/shut off) if any pump
+    failed, naming which pins and why.
     """
+    errors = []
+
+    def _run(pin, seconds):
+        try:
+            run_pump(pin, seconds)
+        except Exception as exc:
+            errors.append((pin, exc))
+
     threads = [
-        threading.Thread(target=run_pump, args=(pin, seconds))
+        threading.Thread(target=_run, args=(pin, seconds))
         for pin, seconds in pin_durations
         if seconds > 0
     ]
@@ -83,3 +106,7 @@ def run_pumps_concurrently(pin_durations):
         t.start()
     for t in threads:
         t.join()
+
+    if errors:
+        summary = "; ".join(f"pin {pin}: {exc}" for pin, exc in errors)
+        raise RuntimeError(f"{len(errors)} pump(s) failed -- {summary}")
